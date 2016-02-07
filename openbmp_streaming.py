@@ -1,17 +1,20 @@
 #!/usr/bin/python
 
+import sys
+sys.path.append('/home/amit/Code/')
 from pyspark import SparkContext
 from pyspark.streaming import StreamingContext
 from pyspark.streaming.kafka import KafkaUtils
 from pymongo import MongoClient
 import netaddr
 from contextlib import contextmanager
+from automation import tasks
 
 
 @contextmanager
-def connect_to_db():
+def connect_to_db(dbase):
     conn = MongoClient('mongodb://localhost',port=27017)
-    db = conn.openbmp
+    db = conn[dbase]
     yield db
     conn.close()
 
@@ -23,17 +26,19 @@ def check_for_hijack(record_entry):
         prefixlen = record_entry['PrefixLen']
         origin_asn = record_entry['Origin_AS']
         as_path = record_entry['AS_Path'].rstrip().split()
+        router = record_entry['Router_IP']
         match_found = netaddr.all_matching_cidrs(prefix,our_ranges)
         if match_found and our_asn != origin_asn and our_asn not in as_path:
             prefix = prefix + '/' + prefixlen
-            message = 'Router {} - Prefix {} appers to be hijacked or incorrectly leaked.'.format(record_entry['Router_IP'],prefix) 
-            with connect_to_db() as db:
-                db.alerts.insert({'timestamp':record_entry['Timestamp'],'message':message,'originating_asn':origin_asn,'as_path':record_entry['AS_Path'],'mitigated':True}) 
+            message = 'Detected by router {}, prefix {} appers to be hijacked or incorrectly leaked.'.format(router,prefix) 
+            mitigated = tasks.apply_filter_config(router,prefix)
+            with connect_to_db('openbmp') as db:
+                db.alerts.insert({'timestamp':record_entry['Timestamp'],'message':message,'originating_asn':origin_asn,'as_path':record_entry['AS_Path'],'mitigated':mitigated}) 
             
 def sendPartition(iter):
     for record in iter:
         check_for_hijack(record)
-        with connect_to_db() as db:
+        with connect_to_db('openbmp') as db:
             db.unicast_prefix.insert(record)
 
 def structure_data(line):
