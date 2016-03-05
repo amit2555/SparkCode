@@ -1,7 +1,5 @@
 #!/usr/bin/python
 
-import sys
-sys.path.append('/home/amit/Code/')
 from pyspark import SparkContext
 from pyspark.streaming import StreamingContext
 from pyspark.streaming.kafka import KafkaUtils
@@ -25,7 +23,7 @@ def check_for_hijack(record_entry):
         prefix = record_entry['Prefix']
         prefixlen = record_entry['PrefixLen']
         origin_asn = record_entry['Origin_AS']
-        as_path = record_entry['AS_Path'].rstrip().split()
+        as_path = record_entry['AS_Path'].lstrip().split()
         router = record_entry['Router_IP']
         match_found = netaddr.all_matching_cidrs(prefix,our_ranges)
         if match_found and our_asn != origin_asn and our_asn not in as_path:
